@@ -28,12 +28,13 @@ c′ files use `.dcdx` (dc/dx, the derivative of C) or `.cpr`. See
 ## Build
 
 c′ is a fork of [chibicc](https://github.com/rui314/chibicc) and targets
-x86-64 Linux.
+x86-64 Linux. The compiler is **written in c′** and builds itself:
 
 ```sh
-make            # builds ./cprime
+make            # stage 0 (C, built by cc) builds ./cprime from the c′ source
 make test       # C and c′ test suites
-make test-all   # also self-hosts and reruns the tests with stage 2
+make test-all   # also builds stage 2 with ./cprime, reruns the tests,
+                # and checks all three stages compile the compiler identically
 ```
 
 ```sh
@@ -41,15 +42,29 @@ make test-all   # also self-hosts and reruns the tests with stage 2
 ```
 
 `cprime` is also a working C compiler: `.c` files are compiled as plain C.
+c′ is a strict superset of C, so any C file can be renamed to `.dcdx` and
+still compile with the same meaning.
+
+See [bootstrap/README.md](bootstrap/README.md) for how the bootstrap works.
 
 ## Where the code is
 
-Every c′ change is tagged `[c']` in the source:
+The compiler's source is c′: `Token`, `Type`, `HashMap` and
+`StringArray` have methods (`tok.equal("(")`, `ty.is_integer()`,
+`map.get(key)`), and the code uses `.` for every member access.
 
-- `parse.c`: method declarations (`struct_members`, `declare_methods`),
+- `parse.dcdx`: method declarations (`struct_members`, `declare_methods`),
   definitions (`method`), calls (`method_call`) and `.`/`->` (`postfix`).
-- `main.c`: file extensions, `-x cprime` and `__CPRIME__`.
+  The c′ language features are tagged `[c']`.
+- `main.dcdx`: file extensions, `-x cprime` and `__CPRIME__`.
 - `test/cprime.dcdx` and `test/cprime-driver.sh`: the c′ tests.
+- `bootstrap/`: stage 0, a frozen C copy of the compiler.
+
+## Written in c′
+
+- cprime itself.
+- [skyblue](https://github.com/mas-4/skyblue), a static site generator
+  structured like a small compiler (lexer, parser, renderer).
 
 The original chibicc README is in [README.chibicc.md](README.chibicc.md).
 chibicc is MIT-licensed; see [LICENSE](LICENSE).

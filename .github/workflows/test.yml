@@ -1,0 +1,17 @@
+name: Test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    # Bootstraps from the C copy in bootstrap/, builds stage 2 with the
+    # result, runs the tests with both, and checks the fixed point.
+    - name: make test-all
+      run: make test-all

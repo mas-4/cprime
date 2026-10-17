@@ -1,0 +1,31 @@
+#include "cprime.h"
+
+void StringArray.push(char *s) {
+  if (!ego.data) {
+    ego.data = calloc(8, sizeof(char *));
+    ego.capacity = 8;
+  }
+
+  if (ego.capacity == ego.len) {
+    ego.data = realloc(ego.data, sizeof(char *) * ego.capacity * 2);
+    ego.capacity *= 2;
+    for (int i = ego.len; i < ego.capacity; i++)
+      ego.data[i] = NULL;
+  }
+
+  ego.data[ego.len++] = s;
+}
+
+// Takes a printf-style format string and returns a formatted string.
+char *format(char *fmt, ...) {
+  char *buf;
+  size_t buflen;
+  FILE *out = open_memstream(&buf, &buflen);
+
+  va_list ap;
+  va_start(ap, fmt);
+  vfprintf(out, fmt, ap);
+  va_end(ap);
+  fclose(out);
+  return buf;
+}

@@ -102,6 +102,13 @@ int main() {
   ASSERT(7, ({ struct Vec a[2] = {{1, 2}, {3, 4}}; a[1].sum(); }));
   ASSERT(9, ({ (struct Vec){4, 5}.sum(); }));
 
+  // Methods on temporaries: call results, chains, assignments.
+  ASSERT(10, ({ struct Vec a = {1, 2}, b = {3, 4}; a.plus(b).sum(); }));
+  ASSERT(16, ({ struct Vec a = {1, 2}, b = {3, 4}; a.plus(b).plus(a).plus(a).sum(); }));
+  ASSERT(28, ({ struct Big b = {{7}}; b.twice().twice().first(); }));
+  ASSERT(7, ({ struct Vec a = {1, 2}, b; (b = a).scale(2); b.sum() + a.sum() - 2; }));
+  ASSERT(3, ({ struct Vec a = {1, 2}, b = {5, 5}; (1 ? a : b).sum(); }));
+
   // The lowered C function can be called directly.
   ASSERT(3, ({ struct Vec v = {1, 2}; Vec__sum(&v); }));
 

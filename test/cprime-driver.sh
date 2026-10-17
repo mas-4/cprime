@@ -84,7 +84,6 @@ echo "$S int S.get(void) { int ego = 1; return ego; }" | expect_error 'ego shado
 echo 'struct T { int f(int a); }; int T.f(int ego) { return 0; }' | expect_error 'ego param' "'ego' is reserved"
 echo "$S int S.get(void) { return x; }" | expect_error 'no implicit ego' 'undefined variable'
 echo "$S int f(void) { struct S s; return s.get; }" | expect_error 'uncalled method' 'must be called'
-echo "$S struct S mk(void); int f(void) { return mk().get(); }" | expect_error 'method on temporary' 'on a temporary'
 echo "$S int f(struct S **pp) { return pp.x; }" | expect_error 'one level of deref' 'not a struct'
 echo "$S int f(struct S s) { return s.get(1); }" | expect_error '() means (void)' 'too many arguments'
 

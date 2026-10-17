@@ -2880,17 +2880,24 @@ static Node *new_inc_dec(Node *node, Token *tok, int addend) {
                   node->ty);
 }
 
-// [c'] Can we take the address of this struct expression?
-static bool is_lvalue(Node *node) {
+// [c'] Does this struct expression have an address to pass as `ego`?
+// Struct-valued calls, assignments and conditionals are materialized
+// into a temporary, which outlives the full expression, as in C11.
+static bool has_address(Node *node) {
   switch (node->kind) {
   case ND_VAR:
   case ND_DEREF:
     return true;
   case ND_MEMBER:
-    return is_lvalue(node->lhs);
+    return has_address(node->lhs);
   case ND_COMMA:
     // A compound literal, `(T){...}`.
-    return is_lvalue(node->rhs);
+    return has_address(node->rhs);
+  case ND_FUNCALL:
+    return node->ret_buffer != NULL;
+  case ND_ASSIGN:
+  case ND_COND:
+    return true;
   }
   return false;
 }
@@ -2904,10 +2911,10 @@ static Node *method_call(Token **rest, Token *tok, Node *obj, Member *m) {
   Node *ego;
   if (obj->kind == ND_DEREF)
     ego = obj->lhs;
-  else if (is_lvalue(obj))
+  else if (has_address(obj))
     ego = new_unary(ND_ADDR, obj, tok);
   else
-    error_tok(tok, "cannot call a method on a temporary; store it in a variable first");
+    error_tok(tok, "cannot call a method on this expression; store it in a variable first");
 
   // For "static inline" methods
   if (current_fn)

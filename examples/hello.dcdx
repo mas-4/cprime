@@ -1,0 +1,16 @@
+#include <stdio.h>
+
+struct Greeter {
+  char *name;
+  void greet(void);
+};
+
+void Greeter.greet(void) {
+  printf("Hello, %s!\n", ego.name);
+}
+
+int main(void) {
+  struct Greeter g = {"world"};
+  g.greet();
+  return 0;
+}

@@ -1,4 +1,4 @@
-# c′ (c-prime) language specification — v0
+# c′ (c-prime) language specification — v0.1
 
 c′ is C11 plus three things:
 
@@ -81,8 +81,11 @@ float Vec.len(void) { return sqrtf(ego.x * ego.x + ego.y * ego.y); }
 - If `x` is a pointer to the struct, `ego` is `x`.
 - If `x` is a struct lvalue (a variable, a member, `*p`, an array
   element or a compound literal), `ego` is `&x`.
-- If `x` is a temporary, such as a function's return value, the call
-  is an error. Store it in a variable first.
+- If `x` is a temporary struct (a call's return value, or the result of
+  `=` or `?:`), it is stored in a hidden temporary and `ego` points
+  there. This allows chains like `s.slice(1, 4).trim().eq(t)`. The
+  temporary lives at least until the end of the full expression, as in
+  C11; don't keep `ego` past the call.
 
 A method name can only be called, not used as a value. To get a function
 pointer, use the lowered name (below).
@@ -114,12 +117,18 @@ directly, and c′ object files link with gcc- or clang-compiled C.
 Don't name your own C functions `Tag__method` for a struct that has that
 method.
 
-## Open questions (not in v0)
+## Relationship to C
+
+c′ is a strict superset of C11: every valid C program is a valid c′
+program with the same meaning. Each c′ feature is a construct that is a
+constraint violation in C (a method declarator in a struct, `.` on a
+pointer, `Tag.name` at file scope), and `ego` is only reserved inside
+method bodies, which C doesn't have.
+
+## Open questions
 
 - Is `ego` a `struct Tag *const`? (chibicc doesn't enforce `const` at all.)
 - A method-value syntax such as `&Vec.len` for taking a method's address.
-- Calling a method on a temporary (C11 gives temporaries a lifetime
-  through the full expression, so this could be allowed).
 - Method definitions inside the struct body.
 - Static ("class") methods with no `ego`.
 - Platforms other than x86-64 Linux, probably through a backend that
