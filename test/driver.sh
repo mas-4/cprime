@@ -16,12 +16,12 @@ check() {
 
 # -o
 rm -f $tmp/out
-./chibicc -c -o $tmp/out $tmp/empty.c
+$chibicc -c -o $tmp/out $tmp/empty.c
 [ -f $tmp/out ]
 check -o
 
 # --help
-$chibicc --help 2>&1 | grep -q chibicc
+$chibicc --help 2>&1 | grep -q cprime
 check --help
 
 # -S

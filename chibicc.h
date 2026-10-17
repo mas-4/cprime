@@ -155,6 +155,9 @@ struct Obj {
   Obj *alloca_bottom;
   int stack_size;
 
+  // [c'] Method: the struct type `ego` points to
+  Type *method_of;
+
   // Static inline function
   bool is_live;
   bool is_root;
@@ -348,6 +351,7 @@ struct Type {
 
   // Struct
   Member *members;
+  Member *methods; // [c']
   bool is_flexible;
   bool is_packed;
 
@@ -372,6 +376,11 @@ struct Member {
   bool is_bitfield;
   int bit_offset;
   int bit_width;
+
+  // [c'] Method
+  bool is_static;
+  bool is_inline;
+  Obj *fn; // the C function the method lowers to
 };
 
 extern Type *ty_void;
@@ -452,6 +461,7 @@ void hashmap_test(void);
 bool file_exists(char *path);
 
 extern StringArray include_paths;
+extern bool is_cprime;
 extern bool opt_fpic;
 extern bool opt_fcommon;
 extern char *base_file;

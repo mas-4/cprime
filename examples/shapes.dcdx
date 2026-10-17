@@ -1,0 +1,30 @@
+#include <stdio.h>
+
+struct Rect {
+  int w, h;
+  int area(void);
+  void grow(int by);
+  void print();
+};
+
+int Rect.area(void) { return ego.w * ego.h; }
+
+void Rect.grow(int by) {
+  ego.w += by;
+  ego.h += by;
+}
+
+void Rect.print() {
+  printf("%dx%d rect, area %d\n", ego.w, ego.h, ego.area());
+}
+
+int main(void) {
+  struct Rect r = {3, 4};
+  struct Rect *p = &r;
+
+  r.print();      // 3x4 rect, area 12
+  p.grow(1);      // `.` works on pointers...
+  r->print();     // ...and `->` works on values: 4x5 rect, area 20
+
+  return Rect__area(&r) == 20 ? 0 : 1;   // the plain C name for r.area()
+}

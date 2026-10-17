@@ -1,10 +1,11 @@
 #include "chibicc.h"
 
 typedef enum {
-  FILE_NONE, FILE_C, FILE_ASM, FILE_OBJ, FILE_AR, FILE_DSO,
+  FILE_NONE, FILE_C, FILE_CPRIME, FILE_ASM, FILE_OBJ, FILE_AR, FILE_DSO,
 } FileType;
 
 StringArray include_paths;
+bool is_cprime;
 bool opt_fcommon = true;
 bool opt_fpic;
 
@@ -35,7 +36,7 @@ static StringArray input_paths;
 static StringArray tmpfiles;
 
 static void usage(int status) {
-  fprintf(stderr, "chibicc [ -o <path> ] <file>\n");
+  fprintf(stderr, "cprime [ -o <path> ] <file.dcdx | file.cpr | file.c>\n");
   exit(status);
 }
 
@@ -76,6 +77,8 @@ static void define(char *str) {
 static FileType parse_opt_x(char *s) {
   if (!strcmp(s, "c"))
     return FILE_C;
+  if (!strcmp(s, "cprime"))
+    return FILE_CPRIME;
   if (!strcmp(s, "assembler"))
     return FILE_ASM;
   if (!strcmp(s, "none"))
@@ -512,6 +515,8 @@ static Token *append_tokens(Token *tok1, Token *tok2) {
   return tok1;
 }
 
+static FileType get_file_type(char *filename);
+
 static void cc1(void) {
   Token *tok = NULL;
 
@@ -530,6 +535,12 @@ static void cc1(void) {
 
     Token *tok2 = must_tokenize_file(path);
     tok = append_tokens(tok, tok2);
+  }
+
+  // c' is enabled by the file extension or `-x cprime`.
+  if (get_file_type(base_file) == FILE_CPRIME) {
+    is_cprime = true;
+    define_macro("__CPRIME__", "1");
   }
 
   // Tokenize and parse.
@@ -691,6 +702,8 @@ static FileType get_file_type(char *filename) {
     return FILE_OBJ;
   if (endswith(filename, ".c"))
     return FILE_C;
+  if (endswith(filename, ".dcdx") || endswith(filename, ".cpr"))
+    return FILE_CPRIME;
   if (endswith(filename, ".s"))
     return FILE_ASM;
 
@@ -754,7 +767,7 @@ int main(int argc, char **argv) {
       continue;
     }
 
-    assert(type == FILE_C);
+    assert(type == FILE_C || type == FILE_CPRIME);
 
     // Just preprocess
     if (opt_E || opt_M) {

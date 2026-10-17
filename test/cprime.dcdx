@@ -1,0 +1,126 @@
+#include "test.h"
+
+#ifndef __CPRIME__
+#error "__CPRIME__ should be defined for .dcdx files"
+#endif
+
+struct Vec {
+  int x, y;
+  int sum(void);
+  int dot(struct Vec *o);
+  void scale(int k);
+  struct Vec plus(struct Vec o);
+  int sum2();                 // `()` means `(void)` in a method
+};
+
+int Vec.sum(void) { return ego.x + ego.y; }
+int Vec.dot(struct Vec *o) { return ego.x * o.x + ego->y * o->y; }
+void Vec.scale(int k) { ego.x *= k; ego.y *= k; }
+struct Vec Vec.plus(struct Vec o) { return (struct Vec){ego.x + o.x, ego.y + o.y}; }
+int Vec.sum2() { return ego.sum() * 2; }   // a method calling a method
+
+// Large structs are returned through a hidden pointer; make sure `ego`
+// still lands in the right register.
+struct Big {
+  long a[8];
+  struct Big twice(void);
+  long first();
+};
+
+struct Big Big.twice(void) {
+  struct Big b;
+  for (int i = 0; i < 8; i++)
+    b.a[i] = ego.a[i] * 2;
+  return b;
+}
+long Big.first() { return ego.a[0]; }
+
+// Methods can be defined through a typedef name; the symbol still
+// uses the tag.
+typedef struct Counter Ctr;
+struct Counter {
+  int n;
+  int next(void);
+  int (*fp)(int);             // a plain function-pointer field
+};
+int Ctr.next(void) { return ++ego.n; }
+
+static int triple(int x) { return x * 3; }
+
+// static inline methods, header style
+struct Pt {
+  int x, y;
+  static inline int manhattan(void);
+};
+static inline int Pt.manhattan(void) { return ego.x + ego.y; }
+
+// Linked structures: `.` follows pointers one level at a time.
+struct Node {
+  int val;
+  struct Node *next;
+  int second(void);
+};
+int Node.second(void) { return ego.next.val; }
+
+// `ego` is an ordinary identifier outside methods.
+int ego_is_not_reserved(void) {
+  int ego = 7;
+  return ego;
+}
+
+// Variadic methods work too.
+struct Acc {
+  int total;
+  int add(int n, ...);
+};
+#include <stdarg.h>
+int Acc.add(int n, ...) {
+  va_list ap;
+  va_start(ap, n);
+  for (int i = 0; i < n; i++)
+    ego.total += va_arg(ap, int);
+  va_end(ap);
+  return ego.total;
+}
+
+int main() {
+  // `.` and `->` are interchangeable.
+  ASSERT(3, ({ struct Vec v = {1, 2}; struct Vec *p = &v; p.x + p.y; }));
+  ASSERT(3, ({ struct Vec v = {1, 2}; v->x + v->y; }));
+  ASSERT(5, ({ struct Vec v = {1, 2}; struct Vec *p = &v; p.x = 5; v.x; }));
+  ASSERT(9, ({ struct Vec a[2] = {{1, 2}, {4, 5}}; a[1].x + a[1]->y; }));
+
+  // Method calls on values and pointers.
+  ASSERT(3, ({ struct Vec v = {1, 2}; v.sum(); }));
+  ASSERT(3, ({ struct Vec v = {1, 2}; struct Vec *p = &v; p.sum(); }));
+  ASSERT(3, ({ struct Vec v = {1, 2}; struct Vec *p = &v; p->sum(); }));
+  ASSERT(3, ({ struct Vec v = {1, 2}; v->sum(); }));
+  ASSERT(11, ({ struct Vec a = {1, 2}, b = {3, 4}; a.dot(&b); }));
+  ASSERT(30, ({ struct Vec v = {4, 6}; v.scale(3); v.sum(); }));
+  ASSERT(10, ({ struct Vec a = {1, 2}, b = {3, 4}; a.plus(b).x + a.plus(b).y; }));
+  ASSERT(6, ({ struct Vec v = {1, 2}; v.sum2(); }));
+  ASSERT(7, ({ struct Vec a[2] = {{1, 2}, {3, 4}}; a[1].sum(); }));
+  ASSERT(9, ({ (struct Vec){4, 5}.sum(); }));
+
+  // The lowered C function can be called directly.
+  ASSERT(3, ({ struct Vec v = {1, 2}; Vec__sum(&v); }));
+
+  ASSERT(14, ({ struct Big b = {{7}}; b.twice().a[0]; }));
+  ASSERT(7, ({ struct Big b = {{7}}; b.first(); }));
+
+  ASSERT(2, ({ Ctr c = {0}; c.next(); c.next(); }));
+  ASSERT(12, ({ struct Counter c = {0, triple}; c.fp(4); }));
+  ASSERT(12, ({ struct Counter c = {0, triple}; struct Counter *p = &c; p.fp(4); }));
+
+  ASSERT(7, ({ struct Pt p = {3, 4}; p.manhattan(); }));
+
+  ASSERT(2, ({ struct Node b = {2, 0}, a = {1, &b}; a.second(); }));
+  ASSERT(2, ({ struct Node b = {2, 0}, a = {1, &b}; a.next.val; }));
+  ASSERT(2, ({ struct Node b = {2, 0}, a = {1, &b}; struct Node *p = &a; p.next.val; }));
+
+  ASSERT(7, ego_is_not_reserved());
+  ASSERT(6, ({ struct Acc a = {0}; a.add(3, 1, 2, 3); }));
+
+  printf("OK\n");
+  return 0;
+}

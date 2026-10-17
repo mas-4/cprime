@@ -148,7 +148,8 @@ static Member *get_struct_member(Type *ty, Token *tok);
 static Type *struct_decl(Token **rest, Token *tok);
 static Type *union_decl(Token **rest, Token *tok);
 static Node *postfix(Token **rest, Token *tok);
-static Node *funcall(Token **rest, Token *tok, Node *node);
+static Node *funcall(Token **rest, Token *tok, Node *node, Node *ego);
+static Obj *find_func(char *name);
 static Node *unary(Token **rest, Token *tok);
 static Node *primary(Token **rest, Token *tok);
 static Token *parse_typedef(Token *tok, Type *basety);
@@ -855,6 +856,8 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       error_tok(tok, "variable declared void");
     if (!ty->name)
       error_tok(ty->name_pos, "variable name omitted");
+    if (current_fn && current_fn->method_of && equal(ty->name, "ego"))
+      error_tok(ty->name, "'ego' is reserved inside a method");
 
     if (attr && attr->is_static) {
       // static local variable
@@ -2544,6 +2547,8 @@ static Node *unary(Token **rest, Token *tok) {
 static void struct_members(Token **rest, Token *tok, Type *ty) {
   Member head = {};
   Member *cur = &head;
+  Member mhead = {};
+  Member *mcur = &mhead;
   int idx = 0;
 
   while (!equal(tok, "}")) {
@@ -2571,6 +2576,20 @@ static void struct_members(Token **rest, Token *tok, Type *ty) {
       Member *mem = calloc(1, sizeof(Member));
       mem->ty = declarator(&tok, tok, basety);
       mem->name = mem->ty->name;
+
+      // [c'] A function declarator inside a struct declares a method.
+      if (is_cprime && mem->ty->kind == TY_FUNC) {
+        if (!mem->name)
+          error_tok(mem->ty->name_pos, "method name omitted");
+        // In a method, `()` means `(void)`, as in C23.
+        if (!mem->ty->params && mem->ty->is_variadic)
+          mem->ty->is_variadic = false;
+        mem->is_static = attr.is_static;
+        mem->is_inline = attr.is_inline;
+        mcur = mcur->next = mem;
+        continue;
+      }
+
       mem->idx = idx++;
       mem->align = attr.align ? attr.align : mem->ty->align;
 
@@ -2593,6 +2612,18 @@ static void struct_members(Token **rest, Token *tok, Type *ty) {
 
   *rest = tok->next;
   ty->members = head.next;
+  ty->methods = mhead.next;
+
+  // [c'] A name can't be both a field and a method, and there is
+  // no overloading.
+  for (Member *m = ty->methods; m; m = m->next) {
+    if (get_struct_member(ty, m->name))
+      error_tok(m->name, "method has the same name as a field");
+    for (Member *m2 = ty->methods; m2 != m; m2 = m2->next)
+      if (m2->name->len == m->name->len &&
+          !strncmp(m2->name->loc, m->name->loc, m->name->len))
+        error_tok(m->name, "duplicate method");
+  }
 }
 
 // attribute = ("__attribute__" "(" "(" "packed" ")" ")")*
@@ -2627,6 +2658,57 @@ static Token *attribute_list(Token *tok, Type *ty) {
   }
 
   return tok;
+}
+
+// [c'] The C function type a method lowers to: `ego` is prepended
+// to the parameter list as a pointer to the struct.
+static Type *method_type(Type *sty, Type *fty) {
+  Type *ego = pointer_to(sty);
+  ego->next = fty->params;
+
+  Type *ty = func_type(fty->return_ty);
+  ty->params = ego;
+  ty->is_variadic = fty->is_variadic;
+  return ty;
+}
+
+// [c'] Method `name` of struct `tag` lowers to the C function
+// `tag__name`, so plain C code can call it too.
+static void declare_methods(Type *sty, Token *tag) {
+  if (!tag)
+    error_tok(sty->methods->name, "a struct with methods must have a tag");
+  if (scope->next)
+    error_tok(tag, "a struct with methods must be declared at file scope");
+
+  for (Member *m = sty->methods; m; m = m->next) {
+    char *sym = format("%.*s__%.*s", tag->len, tag->loc, m->name->len, m->name->loc);
+    Type *ty = method_type(sty, m->ty);
+
+    Obj *fn = find_func(sym);
+    if (fn) {
+      if (!is_compatible(fn->ty, ty))
+        error_tok(m->name, "conflicting types for method");
+    } else {
+      fn = new_gvar(sym, ty);
+      fn->is_function = true;
+      fn->is_definition = false;
+      fn->is_static = m->is_static || m->is_inline;
+      fn->is_inline = m->is_inline;
+      fn->is_root = !(fn->is_static && fn->is_inline);
+    }
+    fn->method_of = sty;
+    m->fn = fn;
+  }
+}
+
+// [c'] Find a method by name. Returns NULL if `ty` isn't a struct.
+static Member *get_method(Type *ty, Token *tok) {
+  if (ty->kind != TY_STRUCT)
+    return NULL;
+  for (Member *m = ty->methods; m; m = m->next)
+    if (m->name->len == tok->len && !strncmp(m->name->loc, tok->loc, tok->len))
+      return m;
+  return NULL;
 }
 
 // struct-union-decl = attribute? ident? ("{" struct-members)?
@@ -2665,12 +2747,14 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     Type *ty2 = hashmap_get2(&scope->tags, tag->loc, tag->len);
     if (ty2) {
       *ty2 = *ty;
-      return ty2;
+      ty = ty2;
+    } else {
+      push_tag_scope(tag, ty);
     }
-
-    push_tag_scope(tag, ty);
   }
 
+  if (ty->methods)
+    declare_methods(ty, tag);
   return ty;
 }
 
@@ -2717,6 +2801,8 @@ static Type *struct_decl(Token **rest, Token *tok) {
 static Type *union_decl(Token **rest, Token *tok) {
   Type *ty = struct_union_decl(rest, tok);
   ty->kind = TY_UNION;
+  if (ty->methods)
+    error_tok(ty->methods->name, "methods are only allowed in structs");
 
   if (ty->size < 0)
     return ty;
@@ -2794,6 +2880,44 @@ static Node *new_inc_dec(Node *node, Token *tok, int addend) {
                   node->ty);
 }
 
+// [c'] Can we take the address of this struct expression?
+static bool is_lvalue(Node *node) {
+  switch (node->kind) {
+  case ND_VAR:
+  case ND_DEREF:
+    return true;
+  case ND_MEMBER:
+    return is_lvalue(node->lhs);
+  case ND_COMMA:
+    // A compound literal, `(T){...}`.
+    return is_lvalue(node->rhs);
+  }
+  return false;
+}
+
+// [c'] x.m(args) is short for Tag__m(&x, args).
+static Node *method_call(Token **rest, Token *tok, Node *obj, Member *m) {
+  if (!equal(tok->next, "("))
+    error_tok(tok, "a method must be called; use %s to refer to the function",
+              m->fn->name);
+
+  Node *ego;
+  if (obj->kind == ND_DEREF)
+    ego = obj->lhs;
+  else if (is_lvalue(obj))
+    ego = new_unary(ND_ADDR, obj, tok);
+  else
+    error_tok(tok, "cannot call a method on a temporary; store it in a variable first");
+
+  // For "static inline" methods
+  if (current_fn)
+    strarray_push(&current_fn->refs, m->fn->name);
+  else
+    m->fn->is_root = true;
+
+  return funcall(rest, tok->next->next, new_var_node(m->fn, tok), ego);
+}
+
 // postfix = "(" type-name ")" "{" initializer-list "}"
 //         = ident "(" func-args ")" postfix-tail*
 //         | primary postfix-tail*
@@ -2805,6 +2929,8 @@ static Node *new_inc_dec(Node *node, Token *tok, int addend) {
 //              | "++"
 //              | "--"
 static Node *postfix(Token **rest, Token *tok) {
+  Node *node;
+
   if (equal(tok, "(") && is_typename(tok->next)) {
     // Compound literal
     Token *start = tok;
@@ -2818,16 +2944,16 @@ static Node *postfix(Token **rest, Token *tok) {
     }
 
     Obj *var = new_lvar("", ty);
-    Node *lhs = lvar_initializer(rest, tok, var);
+    Node *lhs = lvar_initializer(&tok, tok, var);
     Node *rhs = new_var_node(var, tok);
-    return new_binary(ND_COMMA, lhs, rhs, start);
+    node = new_binary(ND_COMMA, lhs, rhs, start);
+  } else {
+    node = primary(&tok, tok);
   }
-
-  Node *node = primary(&tok, tok);
 
   for (;;) {
     if (equal(tok, "(")) {
-      node = funcall(&tok, tok->next, node);
+      node = funcall(&tok, tok->next, node, NULL);
       continue;
     }
 
@@ -2837,6 +2963,26 @@ static Node *postfix(Token **rest, Token *tok) {
       Node *idx = expr(&tok, tok->next);
       tok = skip(tok, "]");
       node = new_unary(ND_DEREF, new_add(node, idx, start), start);
+      continue;
+    }
+
+    if (is_cprime && (equal(tok, ".") || equal(tok, "->"))) {
+      // [c'] `.` and `->` are interchangeable: a pointer to a struct
+      // or union is dereferenced automatically, one level deep.
+      add_type(node);
+      if (node->ty->base && (node->ty->base->kind == TY_STRUCT ||
+                             node->ty->base->kind == TY_UNION))
+        node = new_unary(ND_DEREF, node, tok);
+      add_type(node);
+
+      Member *m = get_method(node->ty, tok->next);
+      if (m) {
+        node = method_call(&tok, tok->next, node, m);
+        continue;
+      }
+
+      node = struct_ref(node, tok->next);
+      tok = tok->next->next;
       continue;
     }
 
@@ -2872,7 +3018,9 @@ static Node *postfix(Token **rest, Token *tok) {
 }
 
 // funcall = (assign ("," assign)*)? ")"
-static Node *funcall(Token **rest, Token *tok, Node *fn) {
+//
+// [c'] If `ego` is given, it is passed as the first argument.
+static Node *funcall(Token **rest, Token *tok, Node *fn, Node *ego) {
   add_type(fn);
 
   if (fn->ty->kind != TY_FUNC &&
@@ -2885,9 +3033,16 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   Node head = {};
   Node *cur = &head;
 
+  if (ego) {
+    cur = cur->next = new_cast(ego, param_ty);
+    param_ty = param_ty->next;
+  }
+
+  bool first = true;
   while (!equal(tok, ")")) {
-    if (cur != &head)
+    if (!first)
       tok = skip(tok, ",");
+    first = false;
 
     Node *arg = assign(&tok, tok);
     add_type(arg);
@@ -3196,12 +3351,10 @@ static void mark_live(Obj *var) {
   }
 }
 
-static Token *function(Token *tok, Type *basety, VarAttr *attr) {
-  Type *ty = declarator(&tok, tok, basety);
-  if (!ty->name)
-    error_tok(ty->name_pos, "function name omitted");
-  char *name_str = get_ident(ty->name);
-
+// `tok` points just past the declarator. `method_of` is the struct
+// type if this is a c' method.
+static Token *function2(Token *tok, Type *ty, char *name_str, VarAttr *attr,
+                        Type *method_of) {
   Obj *fn = find_func(name_str);
   if (fn) {
     // Redeclaration
@@ -3228,7 +3381,14 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   current_fn = fn;
   locals = NULL;
   enter_scope();
-  create_param_lvars(ty->params);
+
+  if (method_of) {
+    fn->method_of = method_of;
+    create_param_lvars(ty->params->next);
+    new_lvar("ego", ty->params);
+  } else {
+    create_param_lvars(ty->params);
+  }
 
   // A buffer for a struct/union return value is passed
   // as the hidden first parameter.
@@ -3259,6 +3419,61 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   leave_scope();
   resolve_goto_labels();
   return tok;
+}
+
+static Token *function(Token *tok, Type *basety, VarAttr *attr) {
+  Type *ty = declarator(&tok, tok, basety);
+  if (!ty->name)
+    error_tok(ty->name_pos, "function name omitted");
+  return function2(tok, ty, get_ident(ty->name), attr, NULL);
+}
+
+// [c'] Lookahead: is this `pointers ident "." ident`, the start of a
+// method definition?
+static bool is_method(Token *tok) {
+  while (equal(tok, "*") || equal(tok, "const") || equal(tok, "volatile") ||
+         equal(tok, "restrict"))
+    tok = tok->next;
+  return tok->kind == TK_IDENT && equal(tok->next, ".") &&
+         tok->next->next->kind == TK_IDENT;
+}
+
+// [c'] method-definition = pointers ident "." ident func-params compound-stmt
+//
+// `Tag.name(params) { ... }` defines the C function `Tag__name` with
+// `ego` as a hidden first parameter.
+static Token *method(Token *tok, Type *basety, VarAttr *attr) {
+  Type *rty = pointers(&tok, tok, basety);
+
+  Token *tag = tok;
+  Type *sty = find_tag(tag);
+  if (!sty)
+    sty = find_typedef(tag);
+  if (!sty || sty->kind != TY_STRUCT)
+    error_tok(tag, "not a struct");
+
+  Token *name = tok->next->next;
+  Member *m = get_method(sty, name);
+  if (!m)
+    error_tok(name, "struct has no such method");
+
+  tok = name->next;
+  if (!equal(tok, "("))
+    error_tok(tok, "expected '('");
+  Type *ty = type_suffix(&tok, tok, rty);
+  if (!ty->params && ty->is_variadic)
+    ty->is_variadic = false;
+  if (!is_compatible(ty, m->ty))
+    error_tok(name, "conflicting types for method");
+  if (!equal(tok, "{"))
+    error_tok(tok, "a method may only be declared inside its struct");
+
+  for (Type *p = ty->params; p; p = p->next)
+    if (p->name && equal(p->name, "ego"))
+      error_tok(p->name, "'ego' is reserved inside a method");
+
+  return function2(tok, method_type(m->fn->method_of, ty), m->fn->name,
+                   attr, m->fn->method_of);
 }
 
 static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
@@ -3345,6 +3560,12 @@ Obj *parse(Token *tok) {
     // Typedef
     if (attr.is_typedef) {
       tok = parse_typedef(tok, basety);
+      continue;
+    }
+
+    // [c'] Method definition
+    if (is_cprime && is_method(tok)) {
+      tok = method(tok, basety, &attr);
       continue;
     }
 
