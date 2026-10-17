@@ -1,5 +1,9 @@
 CFLAGS=-std=c11 -g -fno-common -Wall -Wno-switch
 
+PREFIX=/usr/local
+BINDIR=$(PREFIX)/bin
+LIBDIR=$(PREFIX)/lib/cprime
+
 SRCS=$(wildcard *.dcdx)
 OBJS=$(SRCS:.dcdx=.o)
 
@@ -51,7 +55,7 @@ test: $(TESTS)
 	test/driver.sh ./cprime
 	test/cprime-driver.sh ./cprime
 
-test-all: test test-stage2 fixpoint
+test-all: test test-stage2 fixpoint test-install
 
 # Stage 2
 
@@ -94,10 +98,38 @@ fixpoint: stage0/cprime cprime stage2/cprime
 	done
 	@rm -rf tmp-fixpoint
 
+# Install
+#
+# The binary looks for its headers in ../lib/cprime/include relative to
+# itself, so any PREFIX works and the result can be moved.
+
+install: cprime
+	install -Dm755 cprime $(DESTDIR)$(BINDIR)/cprime
+	install -d $(DESTDIR)$(LIBDIR)/include
+	install -m644 include/*.h $(DESTDIR)$(LIBDIR)/include
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/cprime
+	rm -rf $(DESTDIR)$(LIBDIR)
+
+# Install into a temporary prefix and use it from PATH, elsewhere.
+test-install: cprime
+	@rm -rf tmp-install
+	@$(MAKE) -s install PREFIX=$(CURDIR)/tmp-install/usr
+	@cd tmp-install && cp ../examples/hello.dcdx . && \
+	  PATH=$(CURDIR)/tmp-install/usr/bin:$$PATH cprime -o hello hello.dcdx && \
+	  [ "$$(./hello)" = "Hello, world!" ] && \
+	  echo "testing install ... ok" || { echo "testing install ... FAILED"; exit 1; }
+	@$(MAKE) -s uninstall PREFIX=$(CURDIR)/tmp-install/usr
+	@[ ! -e tmp-install/usr/bin/cprime ] && [ ! -e tmp-install/usr/lib/cprime ] || \
+	  { echo "testing uninstall ... FAILED"; exit 1; }
+	@echo "testing uninstall ... ok"
+	@rm -rf tmp-install
+
 # Misc.
 
 clean:
 	rm -rf cprime tmp* $(TESTS) test/*.s test/*.exe stage0 stage2
 	find * -type f '(' -name '*~' -o -name '*.o' ')' -exec rm {} ';'
 
-.PHONY: all test test-all test-stage2 fixpoint clean
+.PHONY: all test test-all test-stage2 test-install fixpoint install uninstall clean

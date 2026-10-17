@@ -51,10 +51,25 @@ static bool take_arg(char *arg) {
   return false;
 }
 
+// cprime's own headers (stddef.h, stdarg.h, ...) are in include/ next
+// to the binary in a build tree, or in ../lib/cprime/include when it's
+// installed. The binary is found through /proc/self/exe, since argv[0]
+// may be a bare name looked up in PATH, or a symlink.
+static char *own_include_dir(char *argv0) {
+  char buf[4096];
+  ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+  char *dir = dirname(n > 0 ? strndup(buf, n) : strdup(argv0));
+
+  char *build = format("%s/include", dir);
+  char *installed = format("%s/../lib/cprime/include", dir);
+  if (!file_exists(format("%s/stddef.h", build)) &&
+      file_exists(format("%s/stddef.h", installed)))
+    return installed;
+  return build;
+}
+
 static void add_default_include_paths(char *argv0) {
-  // We expect that chibicc-specific include files are installed
-  // to ./include relative to argv[0].
-  include_paths.push(format("%s/include", dirname(strdup(argv0))));
+  include_paths.push(own_include_dir(argv0));
 
   // Add standard include paths.
   include_paths.push("/usr/local/include");

@@ -47,6 +47,19 @@ still compile with the same meaning.
 
 See [bootstrap/README.md](bootstrap/README.md) for how the bootstrap works.
 
+## Install
+
+```sh
+sudo make install                 # /usr/local/bin/cprime
+make install PREFIX=~/.local      # ~/.local/bin/cprime, no sudo
+```
+
+This installs the `cprime` binary and its headers (in `lib/cprime/include`
+under the prefix). `make uninstall` with the same `PREFIX` removes them.
+Packagers can set `DESTDIR`. The binary finds its headers relative to
+itself, so an installed prefix can be moved, and symlinking `./cprime`
+from a checkout into your `PATH` works too.
+
 ## Where the code is
 
 The compiler's source is c′: `Token`, `Type`, `HashMap` and
