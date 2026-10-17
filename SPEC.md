@@ -18,7 +18,9 @@ chibicc (C11 plus common GNU extensions).
 | `.c` | plain C; c′ features are rejected |
 
 `-x cprime` forces c′ mode, for example for stdin. When compiling c′,
-the preprocessor defines `__CPRIME__` to `1`.
+the preprocessor defines `__CPRIME__` to `1`, and `__CPRIME_VERSION__`
+to a string naming the compiler's version (the commit it was built from,
+as `cprime --version` prints it).
 
 c′ has no header extension. Headers are `.h`, and the language they're
 parsed as is the language of the file that includes them. A header

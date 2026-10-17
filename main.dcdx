@@ -1,5 +1,10 @@
 #include "cprime.h"
 
+// The Makefile sets this to the commit cprime was built from.
+#ifndef CPRIME_VERSION
+#define CPRIME_VERSION "unknown"
+#endif
+
 typedef enum {
   FILE_NONE, FILE_C, FILE_CPRIME, FILE_ASM, FILE_OBJ, FILE_AR, FILE_DSO,
 } FileType;
@@ -152,6 +157,11 @@ static void parse_args(int argc, char **argv) {
 
     if (!strcmp(argv[i], "--help"))
       usage(0);
+
+    if (!strcmp(argv[i], "--version")) {
+      printf("cprime %s\n", CPRIME_VERSION);
+      exit(0);
+    }
 
     if (!strcmp(argv[i], "-o")) {
       opt_o = argv[++i];
@@ -556,6 +566,7 @@ static void cc1(void) {
   if (get_file_type(base_file) == FILE_CPRIME) {
     is_cprime = true;
     define_macro("__CPRIME__", "1");
+    define_macro("__CPRIME_VERSION__", "\"" CPRIME_VERSION "\"");
   }
 
   // Tokenize and parse.

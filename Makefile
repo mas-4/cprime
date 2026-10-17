@@ -7,6 +7,10 @@ LIBDIR=$(PREFIX)/lib/cprime
 SRCS=$(wildcard *.dcdx)
 OBJS=$(SRCS:.dcdx=.o)
 
+# The commit cprime is built from, for --version and __CPRIME_VERSION__.
+VERSION:=$(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
+VERSION_FLAG=-DCPRIME_VERSION='"$(VERSION)"'
+
 TEST_SRCS=$(wildcard test/*.c)
 TESTS=$(TEST_SRCS:.c=.exe) test/cprime.exe
 
@@ -40,7 +44,7 @@ cprime: $(OBJS) stage0/cprime
 	./stage0/cprime -o $@ $(OBJS) $(LDFLAGS)
 
 $(OBJS): %.o: %.dcdx cprime.h stage0/cprime
-	./stage0/cprime -c -o $@ $<
+	./stage0/cprime $(VERSION_FLAG) -c -o $@ $<
 
 test/%.exe: cprime test/%.c
 	./cprime -Iinclude -Itest -c -o test/$*.o test/$*.c
@@ -65,7 +69,7 @@ stage2/cprime: $(OBJS:%=stage2/%)
 
 stage2/%.o: cprime %.dcdx cprime.h
 	@mkdir -p stage2/test
-	./cprime -c -o $(@D)/$*.o $*.dcdx
+	./cprime $(VERSION_FLAG) -c -o $(@D)/$*.o $*.dcdx
 
 stage2/test/%.exe: stage2/cprime test/%.c
 	mkdir -p stage2/test

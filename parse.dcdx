@@ -1557,6 +1557,7 @@ static Node *stmt(Token **rest, Token *tok) {
 
     add_type(exp);
     Type *ty = current_fn.ty.return_ty;
+    check_aggregate(exp, ty, "return");
     if (ty.kind != TY_STRUCT && ty.kind != TY_UNION)
       exp = new_cast(exp, current_fn.ty.return_ty);
 
@@ -3056,6 +3057,7 @@ static Node *funcall(Token **rest, Token *tok, Node *fn, Node *recv) {
       tok.error("too many arguments");
 
     if (param_ty) {
+      check_aggregate(arg, param_ty, "argument");
       if (param_ty.kind != TY_STRUCT && param_ty.kind != TY_UNION)
         arg = new_cast(arg, param_ty);
       param_ty = param_ty.next;

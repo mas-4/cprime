@@ -40,6 +40,23 @@ bool Type.is_numeric(void) {
   return ego.is_integer() || ego.is_flonum();
 }
 
+// [c'] A struct or union only converts to the same struct or union.
+// chibicc never checked, so `return ego;` in a method that returns its
+// struct by value (ego is a pointer) compiled to garbage. `what` names
+// the conversion for the message: "return", "assignment" or "argument".
+void check_aggregate(Node *expr, Type *ty, char *what) {
+  bool to = ty.kind == TY_STRUCT || ty.kind == TY_UNION;
+  bool from = expr.ty.kind == TY_STRUCT || expr.ty.kind == TY_UNION;
+  if (!to && !from)
+    return;
+  if (to && from && expr.ty.is_compatible(ty))
+    return;
+  if (to && expr.ty.kind == TY_PTR && expr.ty.base.is_compatible(ty))
+    expr.tok.error("incompatible type in %s: this is a pointer to the %s, "
+                   "so it needs a '*'", what, ty.kind == TY_STRUCT ? "struct" : "union");
+  expr.tok.error("incompatible type in %s", what);
+}
+
 bool Type.is_compatible(Type *t2) {
   Type *t1 = ego;
   if (t1 == t2)
@@ -215,6 +232,7 @@ void add_type(Node *node) {
   case ND_ASSIGN:
     if (node.lhs.ty.kind == TY_ARRAY)
       node.lhs.tok.error("not an lvalue");
+    check_aggregate(node.rhs, node.lhs.ty, "assignment");
     if (node.lhs.ty.kind != TY_STRUCT)
       node.rhs = new_cast(node.rhs, node.lhs.ty);
     node.ty = node.lhs.ty;

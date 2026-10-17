@@ -83,6 +83,16 @@ echo 'void g(void) { struct L { int f(void); }; }' | expect_error 'local struct'
 echo "$S int S.get(void) { int ego = 1; return ego; }" | expect_error 'ego shadowed' "'ego' is reserved"
 echo 'struct T { int f(int a); }; int T.f(int ego) { return 0; }' | expect_error 'ego param' "'ego' is reserved"
 echo "$S int S.get(void) { return x; }" | expect_error 'no implicit ego' 'undefined variable'
+
+# A struct converts only to the same struct, so returning ego (a
+# pointer) where the struct is expected is an error, not garbage.
+echo 'struct P { int x; struct P self(void); }; struct P P.self(void) { return ego; }' | expect_error 'return ego by value' "pointer to the struct, so it needs a '\*'"
+echo 'struct P { int x; struct P self(void); }; struct P P.self(void) { return *ego; }' > $tmp/self.dcdx
+$cprime -c -o $tmp/self.o $tmp/self.dcdx
+check 'return *ego by value'
+echo 'struct A { int x; }; struct B { int x; }; void f(void) { struct A a; struct B b = {1}; a = b; }' | expect_error 'struct assignment' 'incompatible type in assignment'
+echo 'struct A { int x; }; void g(struct A a); void f(struct A *p) { g(p); }' | expect_error 'struct argument' 'incompatible type in argument'
+echo 'struct A { int x; }; int f(struct A a) { return a; }' | expect_error 'struct to int' 'incompatible type in return'
 echo "$S int f(void) { struct S s; return s.get; }" | expect_error 'uncalled method' 'must be called'
 echo "$S int f(struct S **pp) { return pp.x; }" | expect_error 'one level of deref' 'not a struct'
 echo "$S int f(struct S s) { return s.get(1); }" | expect_error '() means (void)' 'too many arguments'

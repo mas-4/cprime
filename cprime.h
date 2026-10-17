@@ -417,6 +417,7 @@ Type *vla_of(Type *base, Node *expr);
 Type *enum_type(void);
 Type *struct_type(void);
 void add_type(Node *node);
+void check_aggregate(Node *expr, Type *ty, char *what);
 
 //
 // codegen.c
